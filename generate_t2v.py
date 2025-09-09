@@ -3,22 +3,35 @@
 
 import argparse, logging, os, random, sys, warnings, torch, torch.distributed as dist
 from datetime import datetime
-from wan.configs import WAN_CONFIGS, SIZE_CONFIGS, MAX_AREA_CONFIGS, SUPPORTED_SIZES
+from wan.configs import WAN_CONFIGS, SIZE_CONFIGS, SUPPORTED_SIZES
 from wan.utils.utils import cache_video, str2bool
 
 warnings.filterwarnings("ignore")
 
 EXAMPLE_PROMPT = {
-    "t2v-14B": {"prompt": "Two anthropomorphic cats ..."}
+    "t2v-A14B": {"prompt": "Two anthropomorphic cats ..."}
 }
+
+DEFAULT_CFG = WAN_CONFIGS["t2v-A14B"]
+DEFAULT_GUIDE_SCALE = (
+    DEFAULT_CFG.sample_guide_scale[1]
+    if isinstance(DEFAULT_CFG.sample_guide_scale, (tuple, list))
+    else DEFAULT_CFG.sample_guide_scale
+)
 
 def _validate_args(args):
     assert args.ckpt_dir, "Please specify --ckpt_dir"
-    assert args.task in WAN_CONFIGS and "t2v" in args.task, "Only T2V tasks supported"
-    if args.sample_steps is None:
-        args.sample_steps = 50
-    if args.frame_num is None:
-        args.frame_num = 81
+    assert args.task in WAN_CONFIGS and args.task.startswith("t2v"), "Only T2V tasks supported"
+    cfg = WAN_CONFIGS[args.task]
+    if args.task != "t2v-A14B":
+        if args.sample_steps == DEFAULT_CFG.sample_steps:
+            args.sample_steps = cfg.sample_steps
+        if args.frame_num == DEFAULT_CFG.frame_num:
+            args.frame_num = cfg.frame_num
+        if args.sample_shift == DEFAULT_CFG.sample_shift:
+            args.sample_shift = cfg.sample_shift
+        if args.sample_guide_scale == DEFAULT_GUIDE_SCALE:
+            args.sample_guide_scale = cfg.sample_guide_scale
     args.base_seed = args.base_seed if args.base_seed >= 0 else random.randint(0, sys.maxsize)
     assert args.size in SUPPORTED_SIZES[args.task], (
         f"{args.size} not supported, choose from {SUPPORTED_SIZES[args.task]}"
@@ -29,9 +42,9 @@ def _validate_args(args):
 
 def _parse_args():
     p = argparse.ArgumentParser("Wan T2V batch sampler")
-    p.add_argument("--task", default="t2v-14B", choices=[k for k in WAN_CONFIGS if "t2v" in k])
+    p.add_argument("--task", default="t2v-A14B", choices=[k for k in WAN_CONFIGS if k.startswith("t2v")])
     p.add_argument("--size", default="1280*720", choices=list(SIZE_CONFIGS.keys()))
-    p.add_argument("--frame_num", type=int, default=None)
+    p.add_argument("--frame_num", type=int, default=DEFAULT_CFG.frame_num)
     p.add_argument("--ckpt_dir", required=True)
     p.add_argument("--output_dir", required=True)
     p.add_argument("--prompt_file_input", required=True, help="txt，每行一个生成 prompt")
@@ -45,9 +58,9 @@ def _parse_args():
     p.add_argument("--dit_fsdp", action="store_true")
     p.add_argument("--base_seed", type=int, default=-1)
     p.add_argument("--sample_solver", default="unipc", choices=["unipc","dpm++"])
-    p.add_argument("--sample_steps", type=int, default=None)
-    p.add_argument("--sample_shift", type=float, default=5.0)
-    p.add_argument("--sample_guide_scale", type=float, default=5.0)
+    p.add_argument("--sample_steps", type=int, default=DEFAULT_CFG.sample_steps)
+    p.add_argument("--sample_shift", type=float, default=DEFAULT_CFG.sample_shift)
+    p.add_argument("--sample_guide_scale", type=float, default=DEFAULT_GUIDE_SCALE)
     p.add_argument("--reverse", action="store_true", help="是否反向生成")
     args = p.parse_args()
     _validate_args(args)
@@ -165,104 +178,17 @@ def generate(args):
 
 
 
-"""
+"""Example usage:
 srun -p video-aigc-3 --nodes=1 --gres=gpu:8 --cpus-per-task=16 \
-torchrun --nproc_per_node=8 --master_port=29525 generate_t2v.py \
---task t2v-14B \
---size 1280*720 \
---ckpt_dir /mnt/petrelfs/zoukai/model/Wan2.1-T2V-14B \
---dit_fsdp --t5_fsdp --ulysses_size 8 \
---output_dir /mnt/petrelfs/zoukai/data/Wan2.1-T2V-14B_aug_seed42 \
---prompt_file_input /mnt/petrelfs/zoukai/code/VBench/prompts/all_dimension_aug_wanx_seed42.txt \
---prompt_file_name  /mnt/petrelfs/zoukai/code/VBench/prompts/all_dimension.txt \
---sample_shift 5.0 \
---sample_guide_scale 5 \
---split 0/2 
-
-
-srun -p video-aigc-3 --nodes=1 --gres=gpu:4 --cpus-per-task=16 \
-torchrun --nproc_per_node=4 --master_port=29505 generate_t2v.py \
---task t2v-1.3B \
---size 832*480 \
---ckpt_dir /mnt/petrelfs/zoukai/model/Wan2.1-T2V-1.3B \
---dit_fsdp --t5_fsdp --ulysses_size 4 \
---output_dir /mnt/petrelfs/zoukai/data/Wan2.1-T2V-1.3B_aug_seed42 \
---prompt_file_input /mnt/petrelfs/zoukai/code/VBench/prompts/all_dimension_aug_wanx_seed42.txt \
---prompt_file_name  /mnt/petrelfs/zoukai/code/VBench/prompts/all_dimension.txt \
---sample_shift 3.0 \
---sample_guide_scale 6 \
---split 1/2 
-
-srun -p video-aigc-3 --nodes=1 --gres=gpu:4 --cpus-per-task=16 \
-torchrun --nproc_per_node=4 --master_port=29502 generate_t2v.py \
---task t2v-1.3B \
---size 832*480 \
---ckpt_dir /mnt/petrelfs/zoukai/model/Wan2.1-T2V-1.3B \
---dit_fsdp --t5_fsdp --ulysses_size 4 \
---output_dir /mnt/petrelfs/zoukai/data/Wan2.1-T2V-1.3B_aug_seed42 \
---prompt_file_input /mnt/petrelfs/zoukai/code/VBench/prompts/all_dimension_aug_wanx_seed42.txt \
---prompt_file_name  /mnt/petrelfs/zoukai/code/VBench/prompts/all_dimension.txt \
---sample_shift 3.0 \
---sample_guide_scale 6 \
---split 0/1 \
---reverse
-
-
-
-srun -p video-aigc-3 --nodes=1 --gres=gpu:4 --cpus-per-task=16 \
-torchrun --nproc_per_node=4 --master_port=29525 generate_t2v.py \
---task t2v-1.3B \
---size 832*480 \
---ckpt_dir /mnt/petrelfs/zoukai/model/Wan2.1-T2V-1.3B \
---dit_fsdp --t5_fsdp --ulysses_size 4 \
---output_dir /mnt/petrelfs/zoukai/data/Wan2.1-T2V-1.3B_aug_new \
---prompt_file_input /mnt/petrelfs/zoukai/code/VBench/prompts/all_dimension_aug_wanx_new.txt \
---prompt_file_name  /mnt/petrelfs/zoukai/code/VBench/prompts/all_dimension.txt \
---sample_shift 3.0 \
---sample_guide_scale 6 \
---split 0/2 \
---reverse
-
-
-srun -p video-aigc-3 --nodes=1 --gres=gpu:4 --cpus-per-task=16 \
-torchrun --nproc_per_node=4 --master_port=29503 generate_t2v.py \
---task t2v-1.3B \
---size 832*480 \
---ckpt_dir /mnt/petrelfs/zoukai/model/Wan2.1-T2V-1.3B \
---dit_fsdp --t5_fsdp --ulysses_size 4 \
---output_dir /mnt/petrelfs/zoukai/data/Wan2.1-T2V-1.3B_aug_new \
---prompt_file_input /mnt/petrelfs/zoukai/code/VBench/prompts/all_dimension_aug_wanx_new.txt \
---prompt_file_name  /mnt/petrelfs/zoukai/code/VBench/prompts/all_dimension.txt \
---sample_shift 3.0 \
---sample_guide_scale 6 \
---split 1/2 \
---reverse
-
-
-
-
-srun -p video-aigc-3 --nodes=1 --gres=gpu:4 --cpus-per-task=16 \
-torchrun --nproc_per_node=4 generate_t2v.py \
---task t2v-1.3B \
---size 832*480 \
---ckpt_dir /mnt/petrelfs/zoukai/model/Wan2.1-T2V-1.3B \
---dit_fsdp --t5_fsdp --ulysses_size 4 \
---output_dir /mnt/petrelfs/zoukai/data/Wan2.1-T2V-1.3B_aug \
---prompt_file_input /mnt/petrelfs/zoukai/code/VBench/prompts/all_dimension_aug_wanx.txt \
---prompt_file_name  /mnt/petrelfs/zoukai/code/VBench/prompts/all_dimension.txt \
---split 0/2
-
-srun -p video-aigc-3 --nodes=1 --gres=gpu:4 --cpus-per-task=16 \
-torchrun --nproc_per_node=4 --master_port=29503 generate_t2v.py \
---task t2v-1.3B \
---size 832*480 \
---ckpt_dir /mnt/petrelfs/zoukai/model/Wan2.1-T2V-1.3B \
---dit_fsdp --t5_fsdp --ulysses_size 4 \
---output_dir /mnt/petrelfs/zoukai/data/Wan2.1-T2V-1.3B_aug \
---prompt_file_input /mnt/petrelfs/zoukai/code/VBench/prompts/all_dimension_aug_wanx.txt \
---prompt_file_name  /mnt/petrelfs/zoukai/code/VBench/prompts/all_dimension.txt \
---split 1/2
-
+ torchrun --nproc_per_node=8 --master_port=29525 generate_t2v.py \
+ --task t2v-A14B \
+ --size 1280*720 \
+ --ckpt_dir /mnt/petrelfs/zoukai/model/Wan2.2-T2V-A14B \
+ --dit_fsdp --t5_fsdp --ulysses_size 8 \
+ --output_dir /mnt/petrelfs/zoukai/data/Wan2.2-T2V-A14B \
+ --prompt_file_input /path/to/prompts.txt \
+ --prompt_file_name  /path/to/names.txt \
+ --split 0/1
 """
 if __name__ == "__main__":
     generate(_parse_args())

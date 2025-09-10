@@ -4,7 +4,8 @@
 import argparse, logging, os, random, sys, warnings, torch, torch.distributed as dist
 from datetime import datetime
 from wan.configs import WAN_CONFIGS, SIZE_CONFIGS, SUPPORTED_SIZES
-from wan.utils.utils import cache_video, str2bool
+from wan.utils.utils import save_video, str2bool
+
 
 warnings.filterwarnings("ignore")
 
@@ -13,11 +14,8 @@ EXAMPLE_PROMPT = {
 }
 
 DEFAULT_CFG = WAN_CONFIGS["t2v-A14B"]
-DEFAULT_GUIDE_SCALE = (
-    DEFAULT_CFG.sample_guide_scale[1]
-    if isinstance(DEFAULT_CFG.sample_guide_scale, (tuple, list))
-    else DEFAULT_CFG.sample_guide_scale
-)
+
+DEFAULT_GUIDE_SCALE = list(DEFAULT_CFG.sample_guide_scale)
 
 def _validate_args(args):
     assert args.ckpt_dir, "Please specify --ckpt_dir"
@@ -31,7 +29,16 @@ def _validate_args(args):
         if args.sample_shift == DEFAULT_CFG.sample_shift:
             args.sample_shift = cfg.sample_shift
         if args.sample_guide_scale == DEFAULT_GUIDE_SCALE:
-            args.sample_guide_scale = cfg.sample_guide_scale
+
+            args.sample_guide_scale = list(cfg.sample_guide_scale)
+    if isinstance(args.sample_guide_scale, list):
+        if len(args.sample_guide_scale) == 1:
+            args.sample_guide_scale = args.sample_guide_scale[0]
+        elif len(args.sample_guide_scale) == 2:
+            args.sample_guide_scale = tuple(args.sample_guide_scale)
+        else:
+            raise ValueError("--sample_guide_scale expects one or two floats")
+            
     args.base_seed = args.base_seed if args.base_seed >= 0 else random.randint(0, sys.maxsize)
     assert args.size in SUPPORTED_SIZES[args.task], (
         f"{args.size} not supported, choose from {SUPPORTED_SIZES[args.task]}"
@@ -45,8 +52,8 @@ def _parse_args():
     p.add_argument("--task", default="t2v-A14B", choices=[k for k in WAN_CONFIGS if k.startswith("t2v")])
     p.add_argument("--size", default="1280*720", choices=list(SIZE_CONFIGS.keys()))
     p.add_argument("--frame_num", type=int, default=DEFAULT_CFG.frame_num)
-    p.add_argument("--ckpt_dir", required=True)
-    p.add_argument("--output_dir", required=True)
+    p.add_argument("--ckpt_dir", default="/mnt/petrelfs/zoukai/model/Wan2.2-T2V-A14B")
+    p.add_argument("--output_dir", default="/mnt/petrelfs/zoukai/data/Wan2.2-T2V-A14B")
     p.add_argument("--prompt_file_input", required=True, help="txt，每行一个生成 prompt")
     p.add_argument("--prompt_file_name", required=True, help="txt，每行一个命名 prompt")
     p.add_argument("--split", default="1/1")
@@ -60,7 +67,14 @@ def _parse_args():
     p.add_argument("--sample_solver", default="unipc", choices=["unipc","dpm++"])
     p.add_argument("--sample_steps", type=int, default=DEFAULT_CFG.sample_steps)
     p.add_argument("--sample_shift", type=float, default=DEFAULT_CFG.sample_shift)
-    p.add_argument("--sample_guide_scale", type=float, default=DEFAULT_GUIDE_SCALE)
+    p.add_argument(
+        "--sample_guide_scale",
+        type=float,
+        nargs="*",
+        default=DEFAULT_GUIDE_SCALE,
+        help="Classifier free guidance scale (one or two floats)",
+    )
+
     p.add_argument("--reverse", action="store_true", help="是否反向生成")
     args = p.parse_args()
     _validate_args(args)
@@ -166,7 +180,7 @@ def generate(args):
                 offload_model=args.offload_model,
             )
             if rank == 0:
-                cache_video(
+                save_video(
                     tensor=video[None],
                     save_file=outpath,
                     fps=cfg.sample_fps,

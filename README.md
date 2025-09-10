@@ -118,7 +118,8 @@ modelscope download Wan-AI/Wan2.2-T2V-A14B --local_dir ./Wan2.2-T2V-A14B
 
 This repository supports the `Wan2.2-T2V-A14B` Text-to-Video model and can simultaneously support video generation at 480P and 720P resolutions.
 
-By default the sampler runs with `frame_num=81`, `sample_steps=40`, `sample_shift=12.0` and `sample_guide_scale=(3.0, 4.0)`. Override these values with `--frame_num`, `--sample_steps`, `--sample_shift` and `--sample_guide_scale` if needed.
+
+The batch sampler (`generate_t2v.py`) defaults to reading the checkpoint from `/mnt/petrelfs/zoukai/model/Wan2.2-T2V-A14B` and saving results under `/mnt/petrelfs/zoukai/data/Wan2.2-T2V-A14B`.
 
 
 ##### (1) Without Prompt Extension

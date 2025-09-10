@@ -6,6 +6,7 @@ from datetime import datetime
 from wan.configs import WAN_CONFIGS, SIZE_CONFIGS, SUPPORTED_SIZES
 from wan.utils.utils import save_video, str2bool
 
+
 warnings.filterwarnings("ignore")
 
 EXAMPLE_PROMPT = {
@@ -13,6 +14,7 @@ EXAMPLE_PROMPT = {
 }
 
 DEFAULT_CFG = WAN_CONFIGS["t2v-A14B"]
+
 DEFAULT_GUIDE_SCALE = list(DEFAULT_CFG.sample_guide_scale)
 
 def _validate_args(args):
@@ -27,6 +29,7 @@ def _validate_args(args):
         if args.sample_shift == DEFAULT_CFG.sample_shift:
             args.sample_shift = cfg.sample_shift
         if args.sample_guide_scale == DEFAULT_GUIDE_SCALE:
+
             args.sample_guide_scale = list(cfg.sample_guide_scale)
     if isinstance(args.sample_guide_scale, list):
         if len(args.sample_guide_scale) == 1:
@@ -35,6 +38,7 @@ def _validate_args(args):
             args.sample_guide_scale = tuple(args.sample_guide_scale)
         else:
             raise ValueError("--sample_guide_scale expects one or two floats")
+            
     args.base_seed = args.base_seed if args.base_seed >= 0 else random.randint(0, sys.maxsize)
     assert args.size in SUPPORTED_SIZES[args.task], (
         f"{args.size} not supported, choose from {SUPPORTED_SIZES[args.task]}"
@@ -70,6 +74,7 @@ def _parse_args():
         default=DEFAULT_GUIDE_SCALE,
         help="Classifier free guidance scale (one or two floats)",
     )
+
     p.add_argument("--reverse", action="store_true", help="是否反向生成")
     args = p.parse_args()
     _validate_args(args)
